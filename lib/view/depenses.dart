@@ -16,12 +16,10 @@ class _DepensesScreenState extends State<DepensesScreen> {
   final DepenseService _service = DepenseService();
   final CategorieService _categorieService = CategorieService();
 
-  final _montantController = TextEditingController();
-  final _libelleController = TextEditingController();
-  int? _selectedCategorieId;
-
   List<Depense> _depenses = [];
   List<Categorie> _categories = [];
+  int? _selectedCategorieId;
+  DateTimeRange? _selectedPeriod;
 
   @override
   void initState() {
@@ -30,31 +28,103 @@ class _DepensesScreenState extends State<DepensesScreen> {
   }
 
   Future<void> _loadData() async {
-    _depenses = await _service.getAllDepenses();
     _categories = await _categorieService.getAllCategories();
+    final allDepenses = await _service.getAllDepenses();
+    if (_selectedPeriod == null) {
+      final now = DateTime.now();
+      _selectedPeriod = DateTimeRange(
+        start: now.subtract(Duration(days: now.weekday - 1)),
+        end: now,
+      );
+    }
+    _depenses = allDepenses.where((dep) {
+      final date = DateTime.tryParse(dep.date);
+      return date != null && _selectedPeriod!.start.isBefore(date.add(const Duration(days: 1))) && date.isBefore(_selectedPeriod!.end.add(const Duration(days: 1)));
+    }).toList();
     setState(() {});
   }
 
   Future<void> _addDepense() async {
-    final montant = double.tryParse(_montantController.text);
-    final libelle = _libelleController.text.trim();
+    final _montantController = TextEditingController();
+    final _libelleController = TextEditingController();
+    final _observationController = TextEditingController();
+    DateTime? selectedDate = DateTime.now();
+    int? selectedCategorie;
 
-    if (montant == null || libelle.isEmpty || _selectedCategorieId == null) return;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nouvelle dépense'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _montantController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Montant'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _libelleController,
+                decoration: const InputDecoration(labelText: 'Libellé'),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<int>(
+                decoration: const InputDecoration(labelText: 'Catégorie'),
+                value: selectedCategorie,
+                items: _categories.map((cat) => DropdownMenuItem(
+                  value: cat.id,
+                  child: Text(cat.libelle),
+                )).toList(),
+                onChanged: (val) => selectedCategorie = val,
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _observationController,
+                decoration: const InputDecoration(labelText: 'Observation (facultatif)'),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: selectedDate!,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) selectedDate = picked;
+                },
+                child: const Text('Sélectionner une date'),
+              )
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final montant = double.tryParse(_montantController.text);
+              if (montant == null || selectedCategorie == null || _libelleController.text.isEmpty) return;
 
-    final date = DateTime.now().toIso8601String().split('T')[0];
+              final depense = Depense(
+                montant: montant,
+                libelle: _libelleController.text.trim(),
+                date: selectedDate!.toIso8601String().split('T')[0],
+                categorieId: selectedCategorie,
+                observation: _observationController.text.trim(),
+              );
 
-    final depense = Depense(
-      montant: montant,
-      date: date,
-      libelle: libelle,
-      categorieId: _selectedCategorieId,
+              await _service.insertDepense(depense);
+              Navigator.pop(context, true);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
     );
 
-    await _service.insertDepense(depense);
-    _montantController.clear();
-    _libelleController.clear();
-    _selectedCategorieId = null;
-    _loadData();
+    if (result == true) _loadData();
   }
 
   Future<void> _deleteDepense(int id) async {
@@ -71,12 +141,37 @@ class _DepensesScreenState extends State<DepensesScreen> {
     }
   }
 
+  Future<void> _selectPeriod() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDateRange: _selectedPeriod,
+    );
+    if (picked != null) {
+      _selectedPeriod = picked;
+      _loadData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dépenses'),
         centerTitle: true,
+        backgroundColor: Colors.teal,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.filter_alt),
+            tooltip: 'Filtrer par période',
+            onPressed: _selectPeriod,
+          )
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addDepense,
+        child: const Icon(Icons.add),
         backgroundColor: Colors.teal,
       ),
       body: SingleChildScrollView(
@@ -85,61 +180,8 @@ class _DepensesScreenState extends State<DepensesScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Ajouter une dépense',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _montantController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Montant (F CFA)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.money_off),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _libelleController,
-              decoration: const InputDecoration(
-                labelText: 'Libellé',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.text_fields),
-              ),
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<int>(
-              value: _selectedCategorieId,
-              items: _categories.map((cat) {
-                return DropdownMenuItem(
-                  value: cat.id,
-                  child: Text(cat.libelle),
-                );
-              }).toList(),
-              onChanged: (value) => setState(() => _selectedCategorieId = value),
-              decoration: const InputDecoration(
-                labelText: 'Catégorie',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.category),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _addDepense,
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
               'Liste des dépenses',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             ..._depenses.map((dep) => Card(
@@ -151,7 +193,7 @@ class _DepensesScreenState extends State<DepensesScreen> {
                   child: Icon(Icons.remove_circle, color: Colors.white),
                 ),
                 title: Text(dep.libelle ?? ''),
-                subtitle: Text(formatDate(dep.date)),
+                subtitle: Text('${formatDate(dep.date)}\n${dep.observation ?? ''}'),
                 trailing: Text(
                   '-${dep.montant.toStringAsFixed(0)} F CFA',
                   style: const TextStyle(
@@ -161,7 +203,7 @@ class _DepensesScreenState extends State<DepensesScreen> {
                 ),
                 onLongPress: () => _deleteDepense(dep.id!),
               ),
-            )),
+            ))
           ],
         ),
       ),

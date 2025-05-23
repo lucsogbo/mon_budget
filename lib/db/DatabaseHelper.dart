@@ -60,7 +60,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         categorieId INTEGER NOT NULL,
         montant REAL NOT NULL,
-        periode TEXT NOT NULL
+        periodicite TEXT NOT NULL
       )
     ''');
   }

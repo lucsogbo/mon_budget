@@ -2,13 +2,13 @@ class Budget {
   final int? id;
   final int categorieId;
   final double montant;
-  final String periode; // exemple : "mensuel", "trimestriel"
+  final String periodicite; // exemple : "mensuel", "trimestriel"
 
   Budget({
     this.id,
     required this.categorieId,
     required this.montant,
-    required this.periode,
+    required this.periodicite,
   });
 
   Map<String, dynamic> toMap() {
@@ -16,7 +16,7 @@ class Budget {
       'id': id,
       'categorieId': categorieId,
       'montant': montant,
-      'periode': periode,
+      'periodicite': periodicite,
     };
   }
 
@@ -25,7 +25,7 @@ class Budget {
       id: map['id'],
       categorieId: map['categorieId'],
       montant: map['montant'],
-      periode: map['periode'],
+      periodicite: map['periodicite'],
     );
   }
 }

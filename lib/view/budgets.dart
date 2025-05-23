@@ -1,28 +1,26 @@
 import 'package:flutter/material.dart';
 import '../model/budget.dart';
-import '../service/BudgetService.dart';
 import '../model/categorie.dart';
+import '../service/BudgetService.dart';
 import '../service/CategorieService.dart';
 
 class BudgetsScreen extends StatefulWidget {
   const BudgetsScreen({super.key});
 
   @override
-  _BudgetsScreenState createState() => _BudgetsScreenState();
+  State<BudgetsScreen> createState() => _BudgetsScreenState();
 }
 
 class _BudgetsScreenState extends State<BudgetsScreen> {
   final BudgetService _budgetService = BudgetService();
   final CategorieService _categorieService = CategorieService();
 
-  final _montantController = TextEditingController();
-  String? _periode = 'Mensuel';
-  int? _selectedCategorieId;
-
   List<Budget> _budgets = [];
   List<Categorie> _categories = [];
 
-  final List<String> _periodes = ['Mensuel', 'Trimestriel', 'Annuel'];
+  final List<String> _periodicites = [
+    'Hebdomadaire', 'Mensuel', 'Trimestriel', 'Annuel'
+  ];
 
   @override
   void initState() {
@@ -36,38 +34,103 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
     setState(() {});
   }
 
-  Future<void> _addBudget() async {
-    final montant = double.tryParse(_montantController.text);
-    if (_selectedCategorieId == null || _periode == null || montant == null) return;
-
-    final exists = await _budgetService.isDuplicate(_selectedCategorieId!, _periode!);
-    if (exists) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Un budget existe déjà pour cette catégorie et cette période.'),
-      ));
-      return;
-    }
-
-    final budget = Budget(
-      categorieId: _selectedCategorieId!,
-      montant: montant,
-      periode: _periode!,
-    );
-
-    await _budgetService.insertBudget(budget);
-    _montantController.clear();
-    _selectedCategorieId = null;
-    _periode = 'Mensuel';
-    _loadData();
-  }
-
   Future<void> _deleteBudget(int id) async {
     await _budgetService.deleteBudget(id);
     _loadData();
   }
 
-  String? getCategorieName(int id) {
-    return _categories.firstWhere((c) => c.id == id, orElse: () => Categorie(id: 0, libelle: "Inconnu")).libelle;
+  void _navigateToAddBudget({Budget? budgetToEdit}) async {
+    final TextEditingController _montantCtrl = TextEditingController(text: budgetToEdit?.montant.toString() ?? '');
+    String? selectedPeriodicite = budgetToEdit?.periodicite;
+    int? selectedCategorieId = budgetToEdit?.categorieId;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(budgetToEdit == null ? 'Nouveau budget' : 'Modifier budget'),
+        content: SingleChildScrollView(
+          child: Column(
+            children: [
+              TextField(
+                controller: _montantCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Montant',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: selectedPeriodicite,
+                decoration: const InputDecoration(
+                  labelText: 'Périodicité',
+                  border: OutlineInputBorder(),
+                ),
+                items: _periodicites.map((p) => DropdownMenuItem(
+                  value: p,
+                  child: Text(p),
+                )).toList(),
+                onChanged: (value) => selectedPeriodicite = value,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: selectedCategorieId,
+                decoration: const InputDecoration(
+                  labelText: 'Catégorie',
+                  border: OutlineInputBorder(),
+                ),
+                items: _categories.map((cat) => DropdownMenuItem(
+                  value: cat.id,
+                  child: Text(cat.libelle),
+                )).toList(),
+                onChanged: (value) => selectedCategorieId = value,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final montant = double.tryParse(_montantCtrl.text);
+              if (montant == null || selectedPeriodicite == null || selectedCategorieId == null) return;
+
+              // empêcher les doublons de périodicité pour une même catégorie
+              final exist = _budgets.any((b) =>
+              b.periodicite == selectedPeriodicite &&
+                  b.categorieId == selectedCategorieId &&
+                  (budgetToEdit == null || b.id != budgetToEdit.id));
+              if (exist) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Ce budget existe déjà pour cette périodicité.')),
+                );
+                return;
+              }
+
+              if (budgetToEdit == null) {
+                await _budgetService.insertBudget(Budget(
+                  montant: montant,
+                  periodicite: selectedPeriodicite!,
+                  categorieId: selectedCategorieId!,
+                ));
+              } else {
+                await _budgetService.updateBudget(Budget(
+                  id: budgetToEdit.id,
+                  montant: montant,
+                  periodicite: selectedPeriodicite!,
+                  categorieId: selectedCategorieId!,
+                ));
+              }
+
+              Navigator.pop(context, true);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) _loadData();
   }
 
   @override
@@ -75,81 +138,53 @@ class _BudgetsScreenState extends State<BudgetsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Budgets'),
+        backgroundColor: Colors.teal,
         centerTitle: true,
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _navigateToAddBudget(),
+        child: const Icon(Icons.add),
         backgroundColor: Colors.teal,
       ),
-      body: SingleChildScrollView(
+      body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Ajouter un budget',
+            const Text('Liste des budgets',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
-              value: _selectedCategorieId,
-              hint: const Text("Sélectionner une catégorie"),
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              items: _categories.map((cat) {
-                return DropdownMenuItem(
-                  value: cat.id,
-                  child: Text(cat.libelle),
-                );
-              }).toList(),
-              onChanged: (value) => setState(() => _selectedCategorieId = value),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _montantController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Montant (F CFA)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.money),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _budgets.length,
+                itemBuilder: (context, index) {
+                  final b = _budgets[index];
+                  final cat = _categories.firstWhere((c) => c.id == b.categorieId, orElse: () => Categorie(libelle: 'Inconnu'));
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    elevation: 2,
+                    child: ListTile(
+                      leading: const Icon(Icons.account_balance_wallet),
+                      title: Text('${b.montant.toStringAsFixed(0)} F - ${b.periodicite}'),
+                      subtitle: Text('Catégorie : ${cat.libelle}'),
+                      trailing: Wrap(
+                        spacing: 8,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _navigateToAddBudget(budgetToEdit: b),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteBudget(b.id!),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: _periode,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              items: _periodes.map((periode) {
-                return DropdownMenuItem(value: periode, child: Text(periode));
-              }).toList(),
-              onChanged: (value) => setState(() => _periode = value),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _addBudget,
-                icon: const Icon(Icons.save),
-                label: const Text('Enregistrer'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text('Liste des budgets',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            ..._budgets.map((budget) => Card(
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              elevation: 2,
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.green,
-                  child: const Icon(Icons.account_balance_wallet, color: Colors.white),
-                ),
-                title: Text('${getCategorieName(budget.categorieId)} - ${budget.periode}'),
-                subtitle: Text('Montant : ${budget.montant.toStringAsFixed(0)} F CFA'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => _deleteBudget(budget.id!),
-                ),
-              ),
-            )),
           ],
         ),
       ),

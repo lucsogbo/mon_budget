@@ -31,12 +31,12 @@ class BudgetService {
     return await db.delete('budgets', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<bool> isDuplicate(int categorieId, String periode) async {
+  Future<bool> isDuplicate(int categorieId, String periodicite) async {
     final db = await _dbHelper.database;
     final result = await db.query(
       'budgets',
-      where: 'categorieId = ? AND periode = ?',
-      whereArgs: [categorieId, periode],
+      where: 'categorieId = ? AND periodicite = ?',
+      whereArgs: [categorieId, periodicite],
       limit: 1,
     );
     return result.isNotEmpty;

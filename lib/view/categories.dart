@@ -11,7 +11,6 @@ class CategoriesScreen extends StatefulWidget {
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
   final CategorieService _service = CategorieService();
-  final TextEditingController _controller = TextEditingController();
   List<Categorie> _categories = [];
 
   @override
@@ -27,25 +26,44 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     });
   }
 
-  Future<void> _addCategorie() async {
-    String libelle = _controller.text.trim();
-    if (libelle.isEmpty) return;
-
-    await _service.insertCategorie(Categorie(libelle: libelle));
-    _controller.clear();
-    _loadCategories();
-  }
-
   Future<void> _deleteCategorie(int id) async {
     final used = await _service.isUsedInDepense(id);
     if (used) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Impossible de supprimer : catégorie utilisée.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible de supprimer : catégorie utilisée.')),
+      );
       return;
     }
     await _service.deleteCategorie(id);
     _loadCategories();
+  }
+
+  void _navigateToAddCategorie() async {
+    final libelle = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final _controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Nouvelle catégorie'),
+          content: TextField(
+            controller: _controller,
+            decoration: const InputDecoration(labelText: 'Libellé'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, _controller.text.trim()),
+              child: const Text('Ajouter'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (libelle != null && libelle.isNotEmpty) {
+      await _service.insertCategorie(Categorie(libelle: libelle));
+      _loadCategories();
+    }
   }
 
   @override
@@ -54,44 +72,21 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       appBar: AppBar(
         title: const Text('Catégories'),
         centerTitle: true,
-        backgroundColor: Colors.cyan,
+        backgroundColor: Colors.deepPurple,
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToAddCategorie,
+        child: const Icon(Icons.add),
+        backgroundColor: Colors.deepPurple,
+        tooltip: 'Ajouter une catégorie',
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Ajouter une catégorie',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      labelText: 'Libellé',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.category),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton.icon(
-                  onPressed: _addCategorie,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Ajouter'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.cyan,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 16),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
             const Text('Liste des catégories',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Expanded(
               child: ListView.builder(
@@ -103,7 +98,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                     elevation: 2,
                     child: ListTile(
                       leading: const CircleAvatar(
-                        backgroundColor: Colors.cyan,
+                        backgroundColor: Colors.deepPurple,
                         child: Icon(Icons.category, color: Colors.white),
                       ),
                       title: Text(cat.libelle),

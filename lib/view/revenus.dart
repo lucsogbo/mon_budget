@@ -12,47 +12,105 @@ class RevenusScreen extends StatefulWidget {
 
 class _RevenusScreenState extends State<RevenusScreen> {
   final RevenuService _service = RevenuService();
-  final _montantController = TextEditingController();
-  final _libelleController = TextEditingController();
-
   List<Revenu> _revenus = [];
+  DateTimeRange? _selectedPeriod;
 
   @override
   void initState() {
     super.initState();
-    _loadRevenus();
+    _loadData();
   }
 
-  Future<void> _loadRevenus() async {
-    final list = await _service.getAllRevenus();
-    setState(() {
-      _revenus = list;
-    });
+  Future<void> _loadData() async {
+    final allRevenus = await _service.getAllRevenus();
+    if (_selectedPeriod == null) {
+      final now = DateTime.now();
+      _selectedPeriod = DateTimeRange(
+        start: DateTime(now.year, now.month, 1),
+        end: DateTime(now.year, now.month + 1, 0),
+      );
+    }
+    _revenus = allRevenus.where((r) {
+      final date = DateTime.tryParse(r.date);
+      return date != null && _selectedPeriod!.start.isBefore(date.add(const Duration(days: 1))) && date.isBefore(_selectedPeriod!.end.add(const Duration(days: 1)));
+    }).toList();
+    setState(() {});
   }
 
   Future<void> _addRevenu() async {
-    final montant = double.tryParse(_montantController.text);
-    final libelle = _libelleController.text.trim();
+    final _montantController = TextEditingController();
+    final _libelleController = TextEditingController();
+    final _observationController = TextEditingController();
+    DateTime? selectedDate = DateTime.now();
 
-    if (montant == null || libelle.isEmpty) return;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nouveau revenu'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _montantController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Montant'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _libelleController,
+                decoration: const InputDecoration(labelText: 'Libellé'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _observationController,
+                decoration: const InputDecoration(labelText: 'Observation (facultatif)'),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: selectedDate!,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) selectedDate = picked;
+                },
+                child: const Text('Sélectionner une date'),
+              )
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final montant = double.tryParse(_montantController.text);
+              if (montant == null || _libelleController.text.isEmpty) return;
 
-    final date = DateTime.now().toIso8601String().split('T')[0];
+              final revenu = Revenu(
+                montant: montant,
+                libelle: _libelleController.text.trim(),
+                date: selectedDate!.toIso8601String().split('T')[0],
+                observation: _observationController.text.trim(),
+              );
 
-    final revenu = Revenu(
-      montant: montant,
-      date: date,
-      libelle: libelle,
+              await _service.insertRevenu(revenu);
+              Navigator.pop(context, true);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
     );
 
-    await _service.insertRevenu(revenu);
-    _montantController.clear();
-    _libelleController.clear();
-    _loadRevenus();
+    if (result == true) _loadData();
   }
 
   Future<void> _deleteRevenu(int id) async {
     await _service.deleteRevenu(id);
-    _loadRevenus();
+    _loadData();
   }
 
   String formatDate(String dateStr) {
@@ -64,6 +122,19 @@ class _RevenusScreenState extends State<RevenusScreen> {
     }
   }
 
+  Future<void> _selectPeriod() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDateRange: _selectedPeriod,
+    );
+    if (picked != null) {
+      _selectedPeriod = picked;
+      _loadData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -71,60 +142,39 @@ class _RevenusScreenState extends State<RevenusScreen> {
         title: const Text('Revenus'),
         centerTitle: true,
         backgroundColor: Colors.green,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.filter_alt),
+            tooltip: 'Filtrer par période',
+            onPressed: _selectPeriod,
+          )
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addRevenu,
+        child: const Icon(Icons.add),
+        backgroundColor: Colors.green,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Ajouter un revenu',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _montantController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Montant (F CFA)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.attach_money),
-              ),
+            const Text(
+              'Liste des revenus',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _libelleController,
-              decoration: const InputDecoration(
-                labelText: 'Libellé',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.title),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _addRevenu,
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text('Liste des revenus',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             ..._revenus.map((rev) => Card(
               margin: const EdgeInsets.symmetric(vertical: 6),
               elevation: 2,
               child: ListTile(
-                leading: CircleAvatar(
+                leading: const CircleAvatar(
                   backgroundColor: Colors.green,
-                  child: const Icon(Icons.add_circle, color: Colors.white),
+                  child: Icon(Icons.add_circle, color: Colors.white),
                 ),
                 title: Text(rev.libelle ?? ''),
-                subtitle: Text(formatDate(rev.date)),
+                subtitle: Text('${formatDate(rev.date)}\n${rev.observation ?? ''}'),
                 trailing: Text(
                   '+${rev.montant.toStringAsFixed(0)} F CFA',
                   style: const TextStyle(
@@ -134,7 +184,7 @@ class _RevenusScreenState extends State<RevenusScreen> {
                 ),
                 onLongPress: () => _deleteRevenu(rev.id!),
               ),
-            )),
+            ))
           ],
         ),
       ),
