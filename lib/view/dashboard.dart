@@ -196,7 +196,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               barGroups: barGroups,
               titlesData: FlTitlesData(
                 leftTitles: AxisTitles(
-                  sideTitles: SideTitles(showTitles: true),
+                  sideTitles: SideTitles(reservedSize: 42, showTitles: true),
                 ),
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
